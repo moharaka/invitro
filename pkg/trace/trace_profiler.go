@@ -45,8 +45,26 @@ func ApplyResourceLimits(functions []*common.Function, CPULimit string) {
 		memoryPct100 := int(functions[i].MemoryStats.Percentile100)
 		var cpuShare int
 		switch CPULimit {
+		case "0.1vCPU":
+			cpuShare = 100
+		case "0.2vCPU":
+			cpuShare = 200
+		case "0.4vCPU":
+			cpuShare = 400
+		case "0.6vCPU":
+			cpuShare = 600
+		case "0.8vCPU":
+			cpuShare = 800
 		case "1vCPU":
 			cpuShare = 1000
+		case "2vCPU":
+			cpuShare = 2000
+		case "4vCPU":
+			cpuShare = 4000
+		case "6vCPU":
+			cpuShare = 6000
+		case "8vCPU":
+			cpuShare = 8000
 		case "GCP":
 			cpuShare = ConvertMemoryToCpu(memoryPct100)
 		}

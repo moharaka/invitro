@@ -100,11 +100,32 @@ const (
 
 // CPULimits
 const (
-	CPULimit1vCPU string = "1vCPU"
-	CPULimitGCP   string = "GCP"
+	CPULimit01vCPU string = "0.1vCPU"
+	CPULimit02vCPU string = "0.2vCPU"
+	CPULimit04vCPU string = "0.4vCPU"
+	CPULimit06vCPU string = "0.6vCPU"
+	CPULimit08vCPU string = "0.8vCPU"
+	CPULimit1vCPU  string = "1vCPU"
+	CPULimit2vCPU  string = "2vCPU"
+	CPULimit4vCPU  string = "4vCPU"
+	CPULimit6vCPU  string = "6vCPU"
+	CPULimit8vCPU  string = "8vCPU"
+	CPULimitGCP    string = "GCP"
 )
 
-var ValidCPULimits = []string{CPULimit1vCPU, CPULimitGCP}
+var ValidCPULimits = []string{
+	CPULimit01vCPU,
+	CPULimit02vCPU,
+	CPULimit04vCPU,
+	CPULimit06vCPU,
+	CPULimit08vCPU,
+	CPULimit1vCPU,
+	CPULimit2vCPU,
+	CPULimit4vCPU,
+	CPULimit6vCPU,
+	CPULimit8vCPU,
+	CPULimitGCP,
+}
 
 // platform
 const (
