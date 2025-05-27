@@ -12,11 +12,11 @@ export COLD_START_BUSY_LOOP_MS=${11}
 
 # Handle MAX_SCALE (now using $12 instead of ${12} for better compatibility)
 if [ -n "${12}" ]; then
-    export MAX_SCALE="${12}"
+    export MAX_SCALE="\"${12}\""
 elif [ -n "${MAX_SCALE}" ]; then
-    export MAX_SCALE="${MAX_SCALE}"
+    export MAX_SCALE="\"${MAX_SCALE}\""
 else    
-    export MAX_SCALE=200
+    export MAX_SCALE="\"200\""
 fi
 
 # Create directory for output if specified
