@@ -24,7 +24,7 @@ const configTemplate = `{
   "RpsColdStartRatioPercentage": 0,
   "RpsCooldownSeconds": 10,
   "RpsImage": "ghcr.io/vhive-serverless/invitro_empty_function:latest",
-  "RpsRuntimeMs": 10,
+  "RpsRuntimeMs": 100,
   "RpsMemoryMB": 2048,
   "RpsIterationMultiplier": 80,
 
