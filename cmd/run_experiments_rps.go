@@ -107,12 +107,18 @@ func main() {
 	startRPtr := flag.Int("start", 10, "Starting RPS value")
 	endRPtr := flag.Int("end", 200, "Ending RPS value")
 	stepRPtr := flag.Int("step", 10, "RPS increment step")
-	maxScalePtr := flag.Int("max_scale", 1, "Maximum scale factor (constant for all runs)")
+	maxScalePtr := flag.Int("max_scale", 200, "Maximum scale factor (constant for all runs)")
+	minScalePtr := flag.Int("min_scale", 0, "Minimum scale factor (constant for all runs)")
 	flag.Parse()
 
 	// Set MAX_SCALE environment variable
 	if err := os.Setenv("MAX_SCALE", fmt.Sprintf("%d", *maxScalePtr)); err != nil {
 		log.Fatalf("Failed to set MAX_SCALE: %v", err)
+	}
+
+	// Set MIN_SCALE environment variable
+	if err := os.Setenv("MIN_SCALE", fmt.Sprintf("%d", *minScalePtr)); err != nil {
+		log.Fatalf("Failed to set MIN_SCALE: %v", err)
 	}
 
 	fmt.Printf("CPU: %s | RPS Range: %d-%d (step %d) | Max Scale: %d\n",

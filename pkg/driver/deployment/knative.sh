@@ -15,8 +15,16 @@ if [ -n "${12}" ]; then
     export MAX_SCALE="\"${12}\""
 elif [ -n "${MAX_SCALE}" ]; then
     export MAX_SCALE="\"${MAX_SCALE}\""
-else    
+else
     export MAX_SCALE="\"200\""
+fi
+
+if [ -n "${12}" ]; then
+    export MIN_SCALE="\"${12}\""
+elif [ -n "${MIN_SCALE}" ]; then
+    export MIN_SCALE="\"${MIN_SCALE}\""
+else
+    export MIN_SCALE="\"0\""
 fi
 
 # Create directory for output if specified
