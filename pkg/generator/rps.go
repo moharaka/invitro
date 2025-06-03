@@ -9,16 +9,35 @@ import (
 	"math/rand"
 )
 
-func generateFunctionByRPS(experimentDuration int, rpsTarget float64) common.IATArray {
-	iat := 1000000.0 / float64(rpsTarget) // μs
+func generateFunctionByRPS(functionIndex int, experimentDuration int, granularity common.TraceGranularity, rpsTarget float64, iatType common.IatDistribution, shiftIAT bool, seed int64) common.IATArray {
+	var iatRand *rand.Rand
+	if iatType == common.Exponential || iatType == common.Uniform {
+		iatRand = rand.New(rand.NewSource(seed + int64(functionIndex)))
+	}
 
 	duration := 0.0 // μs
-	totalExperimentDurationMs := float64(experimentDuration * 60_000_000.0)
+	totalExperimentDurationUs := float64(experimentDuration * common.OneSecondInMicroseconds)
+	if granularity == common.MinuteGranularity {
+		totalExperimentDurationUs = float64(experimentDuration * 60 * common.OneSecondInMicroseconds)
+	}
 
 	var iatResult []float64
-	for duration < totalExperimentDurationMs {
-		iatResult = append(iatResult, iat)
+	for {
+		var iat float64
+		if iatType == common.Equidistant {
+			iat = 1000000.0 / float64(rpsTarget) // μs
+		} else if iatType == common.Exponential {
+			iat = iatRand.ExpFloat64() * 1000000.0 / float64(rpsTarget)
+		} else if iatType == common.Uniform {
+			iat = 2 * iatRand.Float64() * 1000000.0 / float64(rpsTarget)
+		} else {
+			logrus.Fatal("Unsupported IAT distribution for RPS mode.")
+		}
 		duration += iat
+		if duration > totalExperimentDurationUs {
+			break
+		}
+		iatResult = append(iatResult, iat)
 	}
 
 	// make the first invocation be fired right away
@@ -29,7 +48,7 @@ func generateFunctionByRPS(experimentDuration int, rpsTarget float64) common.IAT
 	return iatResult
 }
 
-func countNumberOfInvocationsPerMinute(experimentDuration int, iatResult []float64) []int {
+func countNumberOfInvocationsPerMinute(experimentDuration int, granularity common.TraceGranularity, iatResult []float64) []int {
 	result := make([]int, experimentDuration)
 
 	// set zero count for each minute
@@ -39,9 +58,15 @@ func countNumberOfInvocationsPerMinute(experimentDuration int, iatResult []float
 
 	cnt := make(map[int]int)
 	timestamp := 0.0
+	interval := 0
+	if granularity == common.MinuteGranularity {
+		interval = 60_000_000
+	} else {
+		interval = 1_000_000
+	}
 	for i := 0; i < len(iatResult); i++ {
 		t := timestamp + iatResult[i]
-		minute := int(t) / 60_000_000
+		minute := int(t) / interval
 		cnt[minute]++
 		timestamp = t
 	}
@@ -54,26 +79,25 @@ func countNumberOfInvocationsPerMinute(experimentDuration int, iatResult []float
 	return result
 }
 
-func generateFunctionByRPSWithOffset(experimentDuration int, rpsTarget float64, offset float64) (common.IATArray, []int) {
-	iat := generateFunctionByRPS(experimentDuration, rpsTarget)
+func generateFunctionByRPSWithOffset(functionIndex int, experimentDuration int, granularity common.TraceGranularity, rpsTarget float64, offset float64, iatType common.IatDistribution, shiftIAT bool, seed int64) (common.IATArray, []int) {
+	iat := generateFunctionByRPS(functionIndex, experimentDuration, granularity, rpsTarget, iatType, shiftIAT, seed)
 	iat[0] += offset
-
-	count := countNumberOfInvocationsPerMinute(experimentDuration, iat)
+	count := countNumberOfInvocationsPerMinute(experimentDuration, granularity, iat)
 	return iat, count
 }
 
-func GenerateWarmStartFunction(experimentDuration int, rpsTarget float64) (common.IATArray, []int) {
-	if rpsTarget == 0 {
-		return nil, countNumberOfInvocationsPerMinute(experimentDuration, nil)
+func GenerateWarmStartFunction(functionIndex int, experimentDuration int, granularity common.TraceGranularity, rpsTarget float64, iatType common.IatDistribution, shiftIAT bool, seed int64) (common.IATArray, []int) {
+	if rpsTarget <= 0 {
+		return nil, countNumberOfInvocationsPerMinute(experimentDuration, granularity, nil)
 	}
 
-	iat := generateFunctionByRPS(experimentDuration, rpsTarget)
-	count := countNumberOfInvocationsPerMinute(experimentDuration, iat)
+	iat := generateFunctionByRPS(functionIndex, experimentDuration, granularity, rpsTarget, iatType, shiftIAT, seed)
+	count := countNumberOfInvocationsPerMinute(experimentDuration, granularity, iat)
 	return iat, count
 }
 
 // GenerateColdStartFunctions It is recommended that the first 10% of cold starts are discarded from the experiment results for low cold start RPS.
-func GenerateColdStartFunctions(experimentDuration int, rpsTarget float64, cooldownSeconds int) ([]common.IATArray, [][]int) {
+func GenerateColdStartFunctions(experimentDuration int, granularity common.TraceGranularity, rpsTarget float64, cooldownSeconds int, iatType common.IatDistribution, shiftIAT bool, seed int64) ([]common.IATArray, [][]int) {
 	iat := 1000000.0 / float64(rpsTarget) // ms
 	totalFunctions := int(math.Ceil(rpsTarget * float64(cooldownSeconds)))
 
@@ -92,9 +116,9 @@ func GenerateColdStartFunctions(experimentDuration int, rpsTarget float64, coold
 		var fx common.IATArray
 		var count []int
 		if rpsTarget >= 1 {
-			fx, count = generateFunctionByRPSWithOffset(experimentDuration, 1/float64(cooldownSeconds), float64(offset))
+			fx, count = generateFunctionByRPSWithOffset(i, experimentDuration, granularity, 1/float64(cooldownSeconds), float64(offset), iatType, shiftIAT, seed)
 		} else {
-			fx, count = generateFunctionByRPSWithOffset(experimentDuration, 1/(float64(totalFunctions)/rpsTarget), float64(offset))
+			fx, count = generateFunctionByRPSWithOffset(i, experimentDuration, granularity, 1/(float64(totalFunctions)/rpsTarget), float64(offset), iatType, shiftIAT, seed)
 		}
 
 		functions = append(functions, fx)
@@ -105,11 +129,17 @@ func GenerateColdStartFunctions(experimentDuration int, rpsTarget float64, coold
 	return functions, countResult
 }
 
-func CreateRPSFunctions(cfg *config.LoaderConfiguration, dcfg *config.DirigentConfig, warmFunction common.IATArray, warmFunctionCount []int,
+func CreateRPSFunctions(cfg *config.LoaderConfiguration, dcfg *config.DirigentConfig, warmFunction []common.IATArray, warmFunctionCount [][]int,
 	coldFunctions []common.IATArray, coldFunctionCount [][]int, yamlPath string) []*common.Function {
 	var result []*common.Function
 
 	busyLoopFor := ComputeBusyLoopPeriod(cfg.RpsMemoryMB)
+
+	fmt.Printf("\nFunction Configuration:\n")
+	fmt.Printf("---------------------\n")
+	fmt.Printf("Memory: %dMB\n", cfg.RpsMemoryMB)
+	fmt.Printf("Runtime: %dms\n", cfg.RpsRuntimeMs)
+	fmt.Printf("Busy Loop: %dms\n\n", busyLoopFor)
 
 	if warmFunction != nil || warmFunctionCount != nil {
 		var dirigentMetadataWarm *common.DirigentMetadata
@@ -125,23 +155,37 @@ func CreateRPSFunctions(cfg *config.LoaderConfiguration, dcfg *config.DirigentCo
 			}
 		}
 
-		result = append(result, &common.Function{
-			Name: fmt.Sprintf("warm-function-%d", rand.Int()),
+		for i := 0; i < len(warmFunction); i++ {
+			fn := &common.Function{
+				Name: fmt.Sprintf("warm-function-%d-%d", i, rand.Int()),
 
-			InvocationStats:  &common.FunctionInvocationStats{Invocations: warmFunctionCount},
-			RuntimeStats:     &common.FunctionRuntimeStats{Average: float64(cfg.RpsRuntimeMs)},
-			MemoryStats:      &common.FunctionMemoryStats{Percentile100: float64(cfg.RpsMemoryMB)},
-			DirigentMetadata: dirigentMetadataWarm,
+				InvocationStats:  &common.FunctionInvocationStats{Invocations: warmFunctionCount[i]},
+				RuntimeStats:     &common.FunctionRuntimeStats{Average: float64(cfg.RpsRuntimeMs)},
+				MemoryStats:      &common.FunctionMemoryStats{Percentile100: float64(cfg.RpsMemoryMB)},
+				DirigentMetadata: dirigentMetadataWarm,
 
-			Specification: &common.FunctionSpecification{
-				IAT:                  warmFunction,
-				PerMinuteCount:       warmFunctionCount,
-				RuntimeSpecification: createRuntimeSpecification(len(warmFunction), cfg.RpsRuntimeMs, cfg.RpsMemoryMB),
-			},
+				Specification: &common.FunctionSpecification{
+					IAT:                  warmFunction[i],
+					PerMinuteCount:       warmFunctionCount[i],
+					RuntimeSpecification: createRuntimeSpecification(len(warmFunction[i]), cfg.RpsRuntimeMs, cfg.RpsMemoryMB),
+				},
 
-			YAMLPath:            yamlPath,
-			ColdStartBusyLoopMs: busyLoopFor,
-		})
+				YAMLPath:            yamlPath,
+				ColdStartBusyLoopMs: busyLoopFor,
+			}
+			
+			fmt.Printf("Warm Function %d:\n", i+1)
+			fmt.Printf("  Name: %s\n", fn.Name)
+			fmt.Printf("  Total Invocations: %d\n", len(warmFunction[i]))
+			fmt.Printf("  Per-interval counts: %v\n", fn.InvocationStats.Invocations)
+			fmt.Printf("  Runtime: %.2fms\n", fn.RuntimeStats.Average)
+			fmt.Printf("  Memory: %.2fMB\n", fn.MemoryStats.Percentile100)
+			fmt.Printf("  YAML: %s\n", fn.YAMLPath)
+			fmt.Printf("  Busy Loop: %dms\n", fn.ColdStartBusyLoopMs)
+			fmt.Println("-------------------")
+			
+			result = append(result, fn)
+		}
 	}
 
 	for i := 0; i < len(coldFunctions); i++ {
@@ -158,7 +202,7 @@ func CreateRPSFunctions(cfg *config.LoaderConfiguration, dcfg *config.DirigentCo
 			}
 		}
 
-		result = append(result, &common.Function{
+		fn := &common.Function{
 			Name: fmt.Sprintf("cold-function-%d-%d", i, rand.Int()),
 
 			InvocationStats:  &common.FunctionInvocationStats{Invocations: coldFunctionCount[i]},
@@ -173,7 +217,18 @@ func CreateRPSFunctions(cfg *config.LoaderConfiguration, dcfg *config.DirigentCo
 
 			YAMLPath:            yamlPath,
 			ColdStartBusyLoopMs: busyLoopFor,
-		})
+		}
+		
+		fmt.Printf("Cold Function %d:\n", i+1)
+		fmt.Printf("  Name: %s\n", fn.Name)
+		fmt.Printf("  Total Invocations: %d\n", len(coldFunctions[i]))
+		fmt.Printf("  Per-interval counts: %v\n", fn.InvocationStats.Invocations)
+		fmt.Printf("  Memory: %.2fMB\n", fn.MemoryStats.Percentile100)
+		fmt.Printf("  YAML: %s\n", fn.YAMLPath)
+		fmt.Printf("  Busy Loop: %dms\n", fn.ColdStartBusyLoopMs)
+		fmt.Println("-------------------")
+		
+		result = append(result, fn)
 	}
 
 	return result

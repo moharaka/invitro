@@ -234,11 +234,64 @@ func runRPSMode(cfg *config.LoaderConfiguration, readIATFromFile bool, writeIATs
 	warmStartRPS := rpsTarget * (100 - coldStartPercentage) / 100
 	coldStartRPS := rpsTarget * coldStartPercentage / 100
 
-	warmFunction, warmStartCount := generator.GenerateWarmStartFunction(experimentDuration, warmStartRPS)
-	coldFunctions, coldStartCount := generator.GenerateColdStartFunctions(experimentDuration, coldStartRPS, cfg.RpsCooldownSeconds)
+	iatType, shiftIAT := parseIATDistribution(cfg)
+
+	fmt.Printf("\nExperiment Configuration:\n")
+	fmt.Printf("------------------------\n")
+	fmt.Printf("Duration: %d %s\n", experimentDuration, cfg.Granularity)
+	fmt.Printf("Total Target RPS: %.2f\n", rpsTarget)
+	fmt.Printf("Warm Start RPS: %.2f (%.1f%%)\n", warmStartRPS, 100-coldStartPercentage)
+	fmt.Printf("Cold Start RPS: %.2f (%.1f%%)\n", coldStartRPS, coldStartPercentage)
+	fmt.Printf("IAT Distribution: %s (shift=%v)\n", cfg.IATDistribution, shiftIAT)
+	fmt.Printf("Seed: %d\n\n", cfg.Seed)
+
+	fmt.Printf("Generating warm start function with RPS: %.2f\n", warmStartRPS)
+	warmFunction, warmStartCount := generator.GenerateWarmStartFunction(0, experimentDuration, parseTraceGranularity(cfg), warmStartRPS, iatType, shiftIAT, cfg.Seed)
+	
+	if len(warmFunction) > 0 {
+		fmt.Printf("\nWarm Function IAT Statistics:\n")
+		fmt.Printf("-------------------------\n")
+		fmt.Printf("Number of requests: %d\n", len(warmFunction))
+		fmt.Printf("First 5 IATs (μs): %v\n", warmFunction[:min(5, len(warmFunction))])
+		fmt.Printf("Expected avg IAT (μs): %.2f\n", 1000000.0/warmStartRPS)
+		
+		// Calculate actual average IAT
+		sum := 0.0
+		for _, iat := range warmFunction {
+			sum += iat
+		}
+		fmt.Printf("Actual avg IAT (μs): %.2f\n", sum/float64(len(warmFunction)))
+		
+		fmt.Printf("\nInvocations per %s: %v\n", cfg.Granularity, warmStartCount)
+		
+		// Calculate actual RPS
+		totalTimeUs := sum
+		actualRPS := float64(len(warmFunction)) / (totalTimeUs / 1000000.0)
+		fmt.Printf("Actual RPS: %.2f\n\n", actualRPS)
+	}
+	
+	fmt.Printf("Generating cold start functions with RPS: %.2f\n", coldStartRPS)
+	coldFunctions, coldStartCount := generator.GenerateColdStartFunctions(experimentDuration, parseTraceGranularity(cfg), coldStartRPS, cfg.RpsCooldownSeconds, iatType, shiftIAT, cfg.Seed)
+
+	if len(coldFunctions) > 0 {
+		fmt.Printf("\nCold Functions:\n")
+		fmt.Printf("---------------\n")
+		fmt.Printf("Number of cold functions: %d\n", len(coldFunctions))
+		for i, cf := range coldFunctions {
+			fmt.Printf("Cold function %d: %d requests, First IAT=%.2f μs\n", 
+				i, len(cf), cf[0])
+		}
+	}
 
 	// loads dirigent config only if the platform is 'dirigent'
 	dirigentConfig := config.ReadDirigentConfig(cfg)
+
+	var warmFunctions []common.IATArray
+	var warmStartCounts [][]int
+	if warmFunction != nil {
+		warmFunctions = []common.IATArray{warmFunction}
+		warmStartCounts = [][]int{warmStartCount}
+	}
 
 	experimentDriver := driver.NewDriver(&config.Configuration{
 		LoaderConfiguration: cfg,
@@ -246,7 +299,7 @@ func runRPSMode(cfg *config.LoaderConfiguration, readIATFromFile bool, writeIATs
 
 		DirigentConfiguration: dirigentConfig,
 
-		Functions: generator.CreateRPSFunctions(cfg, dirigentConfig, warmFunction, warmStartCount, coldFunctions, coldStartCount, yamlPath),
+		Functions: generator.CreateRPSFunctions(cfg, dirigentConfig, warmFunctions, warmStartCounts, coldFunctions, coldStartCount, yamlPath),
 	})
 
 	// Skip experiments execution during dry run mode
@@ -256,4 +309,11 @@ func runRPSMode(cfg *config.LoaderConfiguration, readIATFromFile bool, writeIATs
 
 	experimentDriver.ReadOrWriteFileSpecification(writeIATsToFile, readIATFromFile)
 	experimentDriver.RunExperiment()
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

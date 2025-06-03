@@ -31,7 +31,7 @@ const configTemplate = `{
   "TracePath": "RPS",
   "Granularity": "minute",
   "OutputPathPrefix": "$outputDir/experiment_$rps",
-  "IATDistribution": "equidistant",
+  "IATDistribution": "$iat",
   "CPULimit": "$cpu",
   "ExperimentDuration": 3,
   "WarmupDuration": 5,
@@ -51,7 +51,7 @@ func getExperimentDir(cpu string) string {
 	return fmt.Sprintf("data/out/exp_rps_fx_cs_%s", cpu)
 }
 
-func runExperiment(rps int, cpu string) {
+func runExperiment(rps int, cpu string, iat string) {
 	experimentDir := getExperimentDir(cpu)
 	
 	// Create experiment directory
@@ -71,6 +71,7 @@ func runExperiment(rps int, cpu string) {
 	rpsStr := fmt.Sprintf("%d", rps)
 	configContent := strings.ReplaceAll(configTemplate, "$rps", rpsStr)
 	configContent = strings.ReplaceAll(configContent, "$cpu", cpu)
+	configContent = strings.ReplaceAll(configContent, "$iat", iat)
 	configContent = strings.ReplaceAll(configContent, "$outputDir", experimentDir)
 	fileName := fmt.Sprintf("%s/config_knative_trace_%s_%d.json", experimentDir, cpu, rps)
 
@@ -109,6 +110,7 @@ func main() {
 	stepRPtr := flag.Int("step", 10, "RPS increment step")
 	maxScalePtr := flag.Int("max_scale", 200, "Maximum scale factor (constant for all runs)")
 	minScalePtr := flag.Int("min_scale", 0, "Minimum scale factor (constant for all runs)")
+	iatPtr := flag.String("iat", "equidistant", "IAT distribution (equidistant or exponential)")
 	flag.Parse()
 
 	// Set MAX_SCALE environment variable
@@ -121,12 +123,17 @@ func main() {
 		log.Fatalf("Failed to set MIN_SCALE: %v", err)
 	}
 
+	if *iatPtr != "equidistant" && *iatPtr != "exponential" {
+		log.Fatalf("Invalid IAT distribution: %s. Allowed values: 'equidistant' or 'exponential'", *iatPtr)
+	}
+
+
 	fmt.Printf("CPU: %s | RPS Range: %d-%d (step %d) | Max Scale: %d\n",
 		*cpuPtr, *startRPtr, *endRPtr, *stepRPtr, *maxScalePtr)
 
-	runExperiment(1, *cpuPtr)
+	runExperiment(1, *cpuPtr, *iatPtr)
 	for rps := *startRPtr; rps <= *endRPtr; rps += *stepRPtr {
-		runExperiment(rps, *cpuPtr)
+		runExperiment(rps, *cpuPtr, *iatPtr)
 	}
 }
 
